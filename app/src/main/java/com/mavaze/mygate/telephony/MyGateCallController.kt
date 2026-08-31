@@ -155,10 +155,58 @@ object MyGateCallController {
     }
 
     fun onCallRemoved(call: Call) {
-        if (currentCall === call) {
-            cancelTimeout()
-            currentCall = null
-            expectedPhoneNumber = null
+        if (currentCall !== call) {
+            return
+        }
+
+        // Some Telecom implementations remove a call without delivering
+        // STATE_DISCONNECTED to our callback. Do not leave the call queue
+        // stuck on the current resident in that case.
+        cancelTimeout()
+
+        val manual = manualTermination
+        val completed = wasActive
+
+        manualTermination = null
+        currentCall = null
+        expectingOutgoingCall = false
+        expectedPhoneNumber = null
+        wasActive = false
+
+        listener?.onCallEvent(
+            when (manual) {
+                Termination.CANCEL ->
+                    CallEvent.Ended(false, "cancelled")
+                Termination.SKIP ->
+                    CallEvent.Ended(true, "skipped")
+                null ->
+                    CallEvent.Ended(
+                        advance = !completed,
+                        reason = if (completed) "completed" else "call_removed"
+                    )
+            }
+        )
+    }
+
+    fun reset() {
+        cancelTimeout()
+
+        val call = currentCall
+        currentCall = null
+        manualTermination = null
+        expectingOutgoingCall = false
+        expectedPhoneNumber = null
+        wasActive = false
+
+        if (call != null) {
+            try {
+                call.unregisterCallback(callback)
+            } catch (_: Exception) {
+            }
+            try {
+                call.disconnect()
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -316,6 +364,6 @@ object MyGateCallController {
                     ?: "ended"
         }
 
-    private const val NO_ANSWER_TIMEOUT_MS =
-        25_000L
+    private const val NO_ANSWER_TIMEOUT_MS = 10_000L
+    private const val BUSY_TIMEOUT_MS = 1_500L
 }

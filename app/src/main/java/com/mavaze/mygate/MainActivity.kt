@@ -43,6 +43,8 @@ import com.mavaze.mygate.data.repository.*
 import com.mavaze.mygate.ui.admin.*
 import com.mavaze.mygate.ui.login.*
 import com.mavaze.mygate.ui.watchman.WatchmanScreen
+import com.mavaze.mygate.telephony.IncomingCallManager
+import com.mavaze.mygate.telephony.MyGateCallController
 import com.mavaze.mygate.ui.watchman.WatchmanViewModel
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -150,6 +152,9 @@ class MainActivity : ComponentActivity() {
 
             var showLogoutConfirmation by
                 remember { mutableStateOf(false) }
+
+            var loginSessionId by
+                remember { mutableIntStateOf(0) }
 
             val authorizationLauncher =
                 rememberLauncherForActivityResult(
@@ -539,6 +544,9 @@ class MainActivity : ComponentActivity() {
                         Button(
                             onClick = {
                                 showLogoutConfirmation = false
+                                MyGateCallController.reset()
+                                IncomingCallManager.clear()
+                                loginSessionId++
                                 loginViewModel.logout()
                             }
                         ) {
