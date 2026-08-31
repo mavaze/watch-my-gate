@@ -5,6 +5,7 @@ import com.mavaze.mygate.auth.PasswordHasher
 import com.mavaze.mygate.data.local.AppConfig
 import com.mavaze.mygate.data.local.AppDatabase
 import com.mavaze.mygate.data.local.AuthType
+import com.mavaze.mygate.data.local.Society
 import com.mavaze.mygate.data.local.User
 import com.mavaze.mygate.data.local.UserRole
 import kotlinx.coroutines.CoroutineScope
@@ -60,6 +61,51 @@ class MyGateApplication : Application() {
             )
 
             userDao.insert(defaultAdmin)
+        }
+
+        //if (BuildConfig.DEBUG) {
+        if (true){
+            val testAdminEmail = "sanikamvaze@gmail.com"
+            val testSocietyName = "SHINIKA"
+            val testWatchmanUsername = "ramu"
+
+            val testSociety = database.societyDao().findByAdminEmail(testAdminEmail)
+                ?: database.createSocietyWithAdmin(
+                    Society(
+                        name = testSocietyName,
+                        adminEmail = testAdminEmail
+                    ),
+                    User(
+                        username = testAdminEmail,
+                        displayName = testSocietyName,
+                        societyId = null,
+                        role = UserRole.SOCIETY_ADMIN,
+                        authType = AuthType.GOOGLE,
+                        passwordHash = null,
+                        mustChangePassword = false,
+                        enabled = true,
+                        googleAuthorized = false
+                    )
+                ).let { societyId ->
+                    database.societyDao().findById(societyId)
+                        ?: error("Test society was not created")
+                }
+
+            if (userDao.findByUsername(testWatchmanUsername) == null) {
+                userDao.insert(
+                    User(
+                        username = testWatchmanUsername,
+                        displayName = "Ramu",
+                        societyId = testSociety.id,
+                        role = UserRole.WATCHMAN,
+                        authType = AuthType.LOCAL,
+                        passwordHash = PasswordHasher.hash("ramu"),
+                        mustChangePassword = false,
+                        enabled = true,
+                        googleAuthorized = false
+                    )
+                )
+            }
         }
     }
 }
