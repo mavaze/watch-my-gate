@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.mavaze.mygate.auth.AuthRepository
 import com.mavaze.mygate.auth.AuthResult
 import com.mavaze.mygate.auth.GoogleAuthRepository
+import com.mavaze.mygate.auth.GoogleDataSession
 import com.mavaze.mygate.data.local.User
 import com.mavaze.mygate.data.local.UserRole
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -272,6 +273,11 @@ class LoginViewModel(
                         )
             }
         }
+    }
+
+    fun logout() {
+        GoogleDataSession.clear()
+        _uiState.value = LoginUiState()
     }
 
     fun changePassword(

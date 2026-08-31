@@ -47,37 +47,39 @@ class MyGateInCallService : InCallService() {
             MyGateCallController.onCallAdded(call)
         }
 
-        try {
-            call.registerCallback(callback)
-        } catch (_: Exception) {
-        }
-
-        scope.launch {
-            val contact = findContact(call)
-            val alias = contact?.alias?.trim()?.takeIf { it.isNotBlank() }
-                ?: "Unknown resident"
-            val name = contact?.displayName?.trim()?.takeIf { it.isNotBlank() }
-
-            IncomingCallManager.setCall(
-                call = call,
-                alias = alias,
-                displayName = name,
-                incoming = incoming,
-                active = call.state == Call.STATE_ACTIVE
-            )
-
-            val intent = Intent(
-                this@MyGateInCallService,
-                IncomingCallActivity::class.java
-            ).apply {
-                addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP
-                )
+        if (incoming) {
+            try {
+                call.registerCallback(callback)
+            } catch (_: Exception) {
             }
 
-            startActivity(intent)
+            scope.launch {
+                val contact = findContact(call)
+                val alias = contact?.alias?.trim()?.takeIf { it.isNotBlank() }
+                    ?: "Unknown resident"
+                val name = contact?.displayName?.trim()?.takeIf { it.isNotBlank() }
+
+                IncomingCallManager.setCall(
+                    call = call,
+                    alias = alias,
+                    displayName = name,
+                    incoming = true,
+                    active = call.state == Call.STATE_ACTIVE
+                )
+
+                val intent = Intent(
+                    this@MyGateInCallService,
+                    IncomingCallActivity::class.java
+                ).apply {
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    )
+                }
+
+                startActivity(intent)
+            }
         }
     }
 

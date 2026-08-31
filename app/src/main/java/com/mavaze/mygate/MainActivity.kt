@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -147,6 +148,9 @@ class MainActivity : ComponentActivity() {
             var showGoogleConsent by
                 remember { mutableStateOf(false) }
 
+            var showLogoutConfirmation by
+                remember { mutableStateOf(false) }
+
             val authorizationLauncher =
                 rememberLauncherForActivityResult(
                     ActivityResultContracts
@@ -231,6 +235,12 @@ class MainActivity : ComponentActivity() {
                             ?: "Unable to request Google access"
                     )
                 }
+            }
+
+            BackHandler(
+                enabled = loginState.stage == LoginStage.LOGGED_IN
+            ) {
+                showLogoutConfirmation = true
             }
 
             when {
@@ -351,6 +361,9 @@ class MainActivity : ComponentActivity() {
                                 societyId,
                                 email
                             )
+                        },
+                        onLogout = {
+                            showLogoutConfirmation = true
                         }
                     )
                 }
@@ -430,6 +443,9 @@ class MainActivity : ComponentActivity() {
                                             )
                                     }
                                 }
+                            },
+                            onLogout = {
+                                showLogoutConfirmation = true
                             }
                         )
                     }
@@ -496,6 +512,9 @@ class MainActivity : ComponentActivity() {
                                     callPermissionLauncher.launch(
                                         Manifest.permission.CALL_PHONE
                                     )
+                                },
+                                onLogout = {
+                                    showLogoutConfirmation = true
                                 }
                             )
                         } else {
@@ -505,6 +524,37 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
+
+            if (showLogoutConfirmation) {
+                AlertDialog(
+                    onDismissRequest = {
+                        showLogoutConfirmation = false
+                    },
+                    title = { Text("Log out?") },
+                    text = {
+                        Text("Are you sure you want to log out of My Gate?")
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                showLogoutConfirmation = false
+                                loginViewModel.logout()
+                            }
+                        ) {
+                            Text("Logout")
+                        }
+                    },
+                    dismissButton = {
+                        Button(
+                            onClick = {
+                                showLogoutConfirmation = false
+                            }
+                        ) {
+                            Text("Cancel")
+                        }
+                    }
+                )
             }
         }
     }

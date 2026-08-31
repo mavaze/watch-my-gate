@@ -32,7 +32,8 @@ fun WatchmanScreen(
     onRequestDialerRole: () -> Unit,
     dialerRoleHeld: Boolean,
     callPermissionGranted: Boolean,
-    onRequestCallPermission: () -> Unit
+    onRequestCallPermission: () -> Unit,
+    onLogout: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -41,7 +42,16 @@ fun WatchmanScreen(
     ) {
         Text("My Gate", style = MaterialTheme.typography.headlineLarge)
         Spacer(Modifier.height(8.dp))
-        Text("Watchman", style = MaterialTheme.typography.titleMedium)
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Watchman", style = MaterialTheme.typography.titleMedium)
+            OutlinedButton(onClick = onLogout) {
+                Text("Logout")
+            }
+        }
         Spacer(Modifier.height(24.dp))
 
         if (!dialerRoleHeld) {

@@ -15,7 +15,8 @@ fun DefaultAdminScreen(
     onCreateSociety: (String, String) -> Unit,
     onSetEnabled: (Long, Boolean) -> Unit,
     onRenameSociety: (Long, String) -> Unit,
-    onDeleteSociety: (Long, String) -> Unit
+    onDeleteSociety: (Long, String) -> Unit,
+    onLogout: () -> Unit
 ) {
     var showCreate by remember { mutableStateOf(false) }
     var societyName by remember { mutableStateOf("") }
@@ -34,10 +35,18 @@ fun DefaultAdminScreen(
             style = MaterialTheme.typography.headlineMedium
         )
 
-        Text(
-            "Default Administrator",
-            style = MaterialTheme.typography.titleMedium
-        )
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                "Default Administrator",
+                style = MaterialTheme.typography.titleMedium
+            )
+            OutlinedButton(onClick = onLogout) {
+                Text("Logout")
+            }
+        }
 
         Spacer(Modifier.height(24.dp))
 

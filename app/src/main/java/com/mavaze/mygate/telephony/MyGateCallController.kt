@@ -36,6 +36,7 @@ object MyGateCallController {
     private var timeoutRunnable: Runnable? = null
     private var wasActive = false
     private var expectingOutgoingCall = false
+    private var expectedPhoneNumber: String? = null
 
     private enum class Termination {
         CANCEL,
@@ -116,7 +117,18 @@ object MyGateCallController {
             return
         }
 
+        val expected = expectedPhoneNumber
+        val actual = call.details.handle?.schemeSpecificPart
+        if (
+            expected != null &&
+            actual != null &&
+            normalizeNumber(expected) != normalizeNumber(actual)
+        ) {
+            return
+        }
+
         expectingOutgoingCall = false
+        expectedPhoneNumber = null
 
         currentCall?.let {
             try {
@@ -146,7 +158,7 @@ object MyGateCallController {
         if (currentCall === call) {
             cancelTimeout()
             currentCall = null
-            expectingOutgoingCall = false
+            expectedPhoneNumber = null
         }
     }
 
@@ -175,6 +187,7 @@ object MyGateCallController {
         cancelTimeout()
         manualTermination = null
         expectingOutgoingCall = true
+        expectedPhoneNumber = phoneNumber
 
         val uri =
             Uri.parse(
@@ -268,6 +281,11 @@ object MyGateCallController {
         }
 
         timeoutRunnable = null
+    }
+
+    private fun normalizeNumber(value: String): String {
+        val digits = value.filter(Char::isDigit)
+        return if (digits.length > 10) digits.takeLast(10) else digits
     }
 
     private fun disconnectReason(

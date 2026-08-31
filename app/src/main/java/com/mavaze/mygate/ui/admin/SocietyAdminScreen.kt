@@ -15,7 +15,8 @@ fun SocietyAdminScreen(
     state: SocietyAdminUiState,
     onCreateWatchman: (String, String, String) -> Unit,
     onRenameSociety: (String) -> Unit,
-    onConfigureKiosk: () -> Unit
+    onConfigureKiosk: () -> Unit,
+    onLogout: () -> Unit
 ) {
     var showCreate by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
@@ -32,12 +33,21 @@ fun SocietyAdminScreen(
             .fillMaxSize()
             .padding(24.dp)
     ) {
-        Text(
-            state.societyName,
-            style = MaterialTheme.typography.headlineMedium
-        )
-
-        Text(state.adminEmail)
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column {
+                Text(
+                    state.societyName,
+                    style = MaterialTheme.typography.headlineMedium
+                )
+                Text(state.adminEmail)
+            }
+            OutlinedButton(onClick = onLogout) {
+                Text("Logout")
+            }
+        }
 
         Spacer(Modifier.height(16.dp))
 
