@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">My Gate</string>
+    <string name="server_client_id">248560788805-4t4esj2qq4vq38s71ego7t34tvjoq8mt.apps.googleusercontent.com</string>
+    <string name="device_admin_description">My Gate dedicated device administration for kiosk mode.</string>
+</resources>
