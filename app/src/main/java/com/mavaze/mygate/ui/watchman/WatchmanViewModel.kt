@@ -3,18 +3,21 @@ package com.mavaze.mygate.ui.watchman
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.SystemClock
+import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import android.util.Log
 import com.mavaze.mygate.data.local.GateContact
 import com.mavaze.mygate.data.local.GateContactDao
 import com.mavaze.mygate.telephony.CallEvent
 import com.mavaze.mygate.telephony.MyGateCallController
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 
@@ -27,12 +30,23 @@ data class ActiveCall(
     val alias: String,
     val contactName: String,
     val attemptNumber: Int,
-    val totalContacts: Int
+    val totalContacts: Int,
+    val elapsedSeconds: Long = 0L
+)
+
+data class CallHistoryEntry(
+    val alias: String,
+    val contactName: String,
+    val attemptNumber: Int,
+    val durationSeconds: Long,
+    val reason: String,
+    val connected: Boolean
 )
 
 data class WatchmanUiState(
     val aliases: List<WatchmanAlias> = emptyList(),
     val activeCall: ActiveCall? = null,
+    val history: List<CallHistoryEntry> = emptyList(),
     val connected: Boolean = false,
     val busy: Boolean = false,
     val error: String? = null
@@ -45,17 +59,33 @@ class WatchmanViewModel(
 ) : ViewModel(), MyGateCallController.Listener {
 
     private val _state =
-        MutableStateFlow(WatchmanUiState())
+        MutableStateFlow(
+            WatchmanUiState()
+        )
 
     val state: StateFlow<WatchmanUiState> =
         _state.asStateFlow()
 
-    private var callQueue: List<GateContact> = emptyList()
+    private var callQueue:
+            List<GateContact> =
+        emptyList()
+
     private var currentIndex = 0
+
     private var mockMode = false
-    private var mockJob: kotlinx.coroutines.Job? = null
+
+    private var mockJob: Job? = null
+
+    private var timerJob: Job? = null
+
+    private var sequenceId = 0L
+
+    private var attemptStartedAt = 0L
+
+    private var attemptConnected = false
 
     init {
+
         MyGateCallController.setListener(this)
 
         viewModelScope.launch {
@@ -64,18 +94,16 @@ class WatchmanViewModel(
     }
 
     private suspend fun loadAliases() {
-        Log.d("MyGateWatchman", "Loading callable residents for societyId=$societyId")
-
-        val contacts =
-            dao.getCallableForSociety(societyId)
 
         Log.d(
             "MyGateWatchman",
-            "DB callable contacts=${contacts.size}: " +
-                contacts.joinToString {
-                    "${it.displayName} [${it.alias}, p=${it.priority}, phones=${firstPhoneNumber(it.phoneNumbersJson) != null}]"
-                }
+            "Loading callable residents for societyId=$societyId"
         )
+
+        val contacts =
+            dao.getCallableForSociety(
+                societyId
+            )
 
         val aliases =
             contacts
@@ -83,6 +111,7 @@ class WatchmanViewModel(
                     it.alias!!.trim()
                 }
                 .map { (alias, members) ->
+
                     WatchmanAlias(
                         alias = alias,
                         memberCount = members.size
@@ -92,11 +121,6 @@ class WatchmanViewModel(
                     it.alias.lowercase()
                 }
 
-        Log.d(
-            "MyGateWatchman",
-            "DB aliases=${aliases.size}: ${aliases.joinToString { "${it.alias}(${it.memberCount})" }}"
-        )
-
         _state.value =
             _state.value.copy(
                 aliases = aliases,
@@ -104,66 +128,154 @@ class WatchmanViewModel(
             )
     }
 
-    fun mockCallAlias(alias: String) {
-        if (_state.value.activeCall != null) {
+    /**
+     * Returns the Watchman to the workflow home.
+     *
+     * If a call is active, it is terminated first.
+     *
+     * History is cleared because Home represents the beginning
+     * of a new calling workflow.
+     */
+    fun returnHome() {
+
+        mockMode = false
+
+        mockJob?.cancel()
+        mockJob = null
+
+        timerJob?.cancel()
+        timerJob = null
+
+        MyGateCallController.reset()
+
+        callQueue =
+            emptyList()
+
+        currentIndex = 0
+
+        sequenceId++
+
+        attemptStartedAt = 0L
+        attemptConnected = false
+
+        _state.value =
+            _state.value.copy(
+                activeCall = null,
+                history = emptyList(),
+                connected = false,
+                busy = false,
+                error = null
+            )
+    }
+
+    fun mockCallAlias(
+        alias: String
+    ) {
+
+        if (
+            _state.value.activeCall != null
+        ) {
             return
         }
 
         mockJob?.cancel()
+        timerJob?.cancel()
 
         viewModelScope.launch {
+
             val contacts =
                 dao.getForAlias(
                     societyId,
                     alias
                 ).filter {
+
                     it.phoneNumbersJson
                         .let(::firstPhoneNumber)
                         ?.isNotBlank() == true
                 }
 
             if (contacts.isEmpty()) {
+
                 _state.value =
                     _state.value.copy(
                         error =
                             "No callable residents are configured for $alias."
                     )
+
                 return@launch
             }
+
+            sequenceId++
 
             callQueue = contacts
             currentIndex = 0
             mockMode = true
 
+            _state.value =
+                _state.value.copy(
+                    history = emptyList()
+                )
+
+            startAttemptTimer()
             showCurrentCall()
 
-            mockJob = launch {
-                while (mockMode && _state.value.activeCall != null) {
-                    delay(MOCK_CALL_DURATION_MS)
+            mockJob =
+                launch {
 
-                    if (!mockMode || _state.value.activeCall == null) {
-                        break
+                    while (
+                        mockMode &&
+                        _state.value.activeCall != null
+                    ) {
+
+                        delay(
+                            MOCK_CALL_DURATION_MS
+                        )
+
+                        if (
+                            !mockMode ||
+                            _state.value.activeCall == null
+                        ) {
+                            break
+                        }
+
+                        recordCurrentAttempt(
+                            reason = "mock",
+                            connected = false
+                        )
+
+                        currentIndex++
+
+                        if (
+                            currentIndex >=
+                            callQueue.size
+                        ) {
+
+                            finishSequence()
+                            break
+                        }
+
+                        startAttemptTimer()
+                        showCurrentCall()
                     }
-
-                    currentIndex++
-                    if (currentIndex >= callQueue.size) {
-                        finishSequence()
-                        break
-                    }
-
-                    showCurrentCall()
                 }
-            }
         }
     }
 
-    @RequiresPermission(Manifest.permission.CALL_PHONE)
-    fun callAlias(alias: String) {
-        if (_state.value.activeCall != null) {
+    @RequiresPermission(
+        Manifest.permission.CALL_PHONE
+    )
+    fun callAlias(
+        alias: String
+    ) {
+
+        if (
+            _state.value.activeCall != null
+        ) {
             return
         }
 
         viewModelScope.launch {
+
             val contacts =
                 dao.getForAlias(
                     societyId,
@@ -172,78 +284,117 @@ class WatchmanViewModel(
 
             val valid =
                 contacts.filter {
+
                     it.phoneNumbersJson
                         .let(::firstPhoneNumber)
                         ?.isNotBlank() == true
                 }
 
             if (valid.isEmpty()) {
+
                 _state.value =
                     _state.value.copy(
                         error =
                             "No callable residents are configured for $alias."
                     )
+
                 return@launch
             }
 
             if (
                 applicationContext.checkSelfPermission(
                     Manifest.permission.CALL_PHONE
-                ) != PackageManager.PERMISSION_GRANTED
+                ) !=
+                PackageManager.PERMISSION_GRANTED
             ) {
+
                 _state.value =
                     _state.value.copy(
                         error =
                             "Phone-call permission is not granted."
                     )
+
                 return@launch
             }
 
+            sequenceId++
+
             mockMode = false
+
             mockJob?.cancel()
             mockJob = null
+
+            timerJob?.cancel()
+
             callQueue = valid
             currentIndex = 0
+
             _state.value =
                 _state.value.copy(
-                    activeCall = activeCall(),
+                    activeCall =
+                        activeCall(
+                            elapsedSeconds = 0L
+                        ),
+                    history = emptyList(),
                     connected = false,
                     busy = true,
                     error = null
                 )
 
+            startAttemptTimer()
+
             try {
+
                 MyGateCallController.placeCall(
                     applicationContext,
                     phoneNumber =
                         firstPhoneNumber(
-                            callQueue[currentIndex]
-                                .phoneNumbersJson
+                            callQueue[
+                                currentIndex
+                            ].phoneNumbersJson
                         )!!
                 )
+
             } catch (e: Exception) {
+
+                stopAttemptTimer()
+
                 _state.value =
                     _state.value.copy(
                         activeCall = null,
                         busy = false,
+                        connected = false,
                         error =
                             e.message
                                 ?: "Unable to start the call."
                     )
-                callQueue = emptyList()
+
+                callQueue =
+                    emptyList()
             }
         }
     }
 
     fun cancelCall() {
-        if (_state.value.activeCall == null) {
+
+        if (
+            _state.value.activeCall == null
+        ) {
             return
         }
 
         if (mockMode) {
+
             mockMode = false
+
             mockJob?.cancel()
             mockJob = null
+
+            recordCurrentAttempt(
+                reason = "cancelled",
+                connected = attemptConnected
+            )
+
             finishSequence()
             return
         }
@@ -252,30 +403,64 @@ class WatchmanViewModel(
     }
 
     fun skipCall() {
-        if (_state.value.activeCall == null) {
+
+        if (
+            _state.value.activeCall == null
+        ) {
             return
         }
 
         if (mockMode) {
+
+            recordCurrentAttempt(
+                reason = "skipped",
+                connected = attemptConnected
+            )
+
             currentIndex++
-            if (currentIndex >= callQueue.size) {
+
+            if (
+                currentIndex >=
+                callQueue.size
+            ) {
+
                 mockMode = false
+
                 mockJob?.cancel()
                 mockJob = null
+
                 finishSequence()
+
             } else {
+
+                startAttemptTimer()
                 showCurrentCall()
             }
+
             return
         }
 
         MyGateCallController.skipCurrentCall()
     }
 
-    override fun onCallEvent(event: CallEvent) {
+    override fun onCallEvent(
+        event: CallEvent
+    ) {
+
         viewModelScope.launch {
+
             when (event) {
+
                 CallEvent.Connected -> {
+
+                    if (
+                        _state.value.activeCall == null
+                    ) {
+                        return@launch
+                    }
+
+                    attemptConnected = true
+
                     _state.value =
                         _state.value.copy(
                             connected = true,
@@ -284,10 +469,27 @@ class WatchmanViewModel(
                 }
 
                 is CallEvent.Ended -> {
+
+                    if (
+                        _state.value.activeCall == null
+                    ) {
+                        return@launch
+                    }
+
+                    recordCurrentAttempt(
+                        reason = event.reason,
+                        connected = attemptConnected
+                    )
+
                     if (!event.advance) {
+
                         finishSequence()
+
                     } else {
-                        advanceOrFinish(event.reason)
+
+                        advanceOrFinish(
+                            event.reason
+                        )
                     }
                 }
             }
@@ -297,60 +499,187 @@ class WatchmanViewModel(
     private suspend fun advanceOrFinish(
         reason: String
     ) {
+
         currentIndex++
 
-        if (currentIndex >= callQueue.size) {
+        if (
+            currentIndex >=
+            callQueue.size
+        ) {
+
             finishSequence()
             return
         }
 
-        val next =
-            callQueue[currentIndex]
+        startAttemptTimer()
 
         _state.value =
             _state.value.copy(
-                activeCall = activeCall(),
+                activeCall =
+                    activeCall(
+                        elapsedSeconds = 0L
+                    ),
                 connected = false,
                 busy = true,
                 error = null
             )
 
         try {
+
             MyGateCallController.placeCall(
                 applicationContext,
                 firstPhoneNumber(
-                    next.phoneNumbersJson
+                    callQueue[
+                        currentIndex
+                    ].phoneNumbersJson
                 )!!
             )
+
         } catch (e: Exception) {
+
+            stopAttemptTimer()
+
             _state.value =
                 _state.value.copy(
                     activeCall = null,
                     busy = false,
+                    connected = false,
                     error =
-                        "Unable to call ${next.displayName}: " +
-                            (e.message ?: "unknown error")
+                        "Unable to call " +
+                                callQueue[
+                                    currentIndex
+                                ].displayName +
+                                ": " +
+                                (
+                                        e.message
+                                            ?: "unknown error"
+                                        )
                 )
-            callQueue = emptyList()
+
+            callQueue =
+                emptyList()
         }
     }
 
     private fun showCurrentCall() {
+
         _state.value =
             _state.value.copy(
-                activeCall = activeCall(),
+                activeCall =
+                    activeCall(
+                        elapsedSeconds = 0L
+                    ),
                 connected = false,
                 busy = true,
                 error = null
             )
     }
 
+    private fun startAttemptTimer() {
+
+        timerJob?.cancel()
+
+        attemptStartedAt =
+            SystemClock.elapsedRealtime()
+
+        attemptConnected = false
+
+        timerJob =
+            viewModelScope.launch {
+
+                while (isActive) {
+
+                    val elapsed =
+                        (
+                                SystemClock.elapsedRealtime() -
+                                        attemptStartedAt
+                                ) / 1000L
+
+                    val active =
+                        _state.value.activeCall
+
+                    if (active != null) {
+
+                        _state.value =
+                            _state.value.copy(
+                                activeCall =
+                                    active.copy(
+                                        elapsedSeconds =
+                                            elapsed
+                                    )
+                            )
+                    }
+
+                    delay(1000L)
+                }
+            }
+    }
+
+    private fun stopAttemptTimer() {
+
+        timerJob?.cancel()
+        timerJob = null
+    }
+
+    private fun recordCurrentAttempt(
+        reason: String,
+        connected: Boolean
+    ) {
+
+        val active =
+            _state.value.activeCall
+                ?: return
+
+        val durationSeconds =
+            if (
+                attemptStartedAt == 0L
+            ) {
+                active.elapsedSeconds
+            } else {
+                (
+                        SystemClock.elapsedRealtime() -
+                                attemptStartedAt
+                        ) / 1000L
+            }
+
+        val entry =
+            CallHistoryEntry(
+                alias = active.alias,
+                contactName = active.contactName,
+                attemptNumber =
+                    active.attemptNumber,
+                durationSeconds =
+                    durationSeconds,
+                reason = reason,
+                connected = connected
+            )
+
+        _state.value =
+            _state.value.copy(
+                history =
+                    _state.value.history +
+                            entry
+            )
+
+        stopAttemptTimer()
+    }
+
     private fun finishSequence() {
+
         mockMode = false
+
         mockJob?.cancel()
         mockJob = null
-        callQueue = emptyList()
+
+        stopAttemptTimer()
+
+        callQueue =
+            emptyList()
+
         currentIndex = 0
+
+        attemptStartedAt = 0L
+        attemptConnected = false
 
         _state.value =
             _state.value.copy(
@@ -360,54 +689,83 @@ class WatchmanViewModel(
             )
     }
 
-    private fun activeCall(): ActiveCall =
+    private fun activeCall(
+        elapsedSeconds: Long
+    ): ActiveCall =
+
         ActiveCall(
             alias =
-                callQueue[currentIndex]
-                    .alias!!
+                callQueue[
+                    currentIndex
+                ].alias!!
                     .trim(),
+
             contactName =
-                callQueue[currentIndex]
-                    .displayName
-                    .ifBlank { "Resident" },
+                callQueue[
+                    currentIndex
+                ].displayName
+                    .ifBlank {
+                        "Resident"
+                    },
+
             attemptNumber =
                 currentIndex + 1,
+
             totalContacts =
-                callQueue.size
+                callQueue.size,
+
+            elapsedSeconds =
+                elapsedSeconds
         )
 
     override fun onCleared() {
+
         mockMode = false
+
         mockJob?.cancel()
-        MyGateCallController.setListener(null)
+        timerJob?.cancel()
+
+        MyGateCallController.setListener(
+            null
+        )
+
         super.onCleared()
     }
 
     private companion object {
-        const val MOCK_CALL_DURATION_MS = 3000L
+
+        const val MOCK_CALL_DURATION_MS =
+            3000L
     }
 
     private fun firstPhoneNumber(
         json: String
     ): String? {
-        return try {
-            val array = JSONArray(json)
 
-            for (i in 0 until array.length()) {
+        return try {
+
+            val array =
+                JSONArray(json)
+
+            for (
+            i in 0 until array.length()
+            ) {
+
                 val value =
                     array.optString(i)
                         .trim()
 
-                if (value.isNotBlank()) {
+                if (
+                    value.isNotBlank()
+                ) {
                     return value
                 }
             }
 
             null
+
         } catch (_: Exception) {
             null
         }
     }
-
-
 }

@@ -40,11 +40,11 @@ import com.google.android.gms.auth.api.identity.AuthorizationResult
 import com.mavaze.mygate.auth.*
 import com.mavaze.mygate.data.local.*
 import com.mavaze.mygate.data.repository.*
+import com.mavaze.mygate.telephony.IncomingCallManager
+import com.mavaze.mygate.telephony.MyGateCallController
 import com.mavaze.mygate.ui.admin.*
 import com.mavaze.mygate.ui.login.*
 import com.mavaze.mygate.ui.watchman.WatchmanScreen
-import com.mavaze.mygate.telephony.IncomingCallManager
-import com.mavaze.mygate.telephony.MyGateCallController
 import com.mavaze.mygate.ui.watchman.WatchmanViewModel
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -57,11 +57,11 @@ class MainActivity : ComponentActivity() {
     private lateinit var societyRepository: SocietyRepository
     private lateinit var googleAuthRepository: GoogleAuthRepository
     private lateinit var googleAuthorizationRepository:
-        GoogleAuthorizationRepository
+            GoogleAuthorizationRepository
     private lateinit var googleDataRepository:
-        GoogleDataRepository
+            GoogleDataRepository
     private lateinit var appConfigRepository:
-        AppConfigRepository
+            AppConfigRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,22 +93,27 @@ class MainActivity : ComponentActivity() {
             )
 
         setContent {
+
             var dialerRoleHeld by remember {
-                mutableStateOf(isDialerRoleHeld())
+                mutableStateOf(
+                    isDialerRoleHeld()
+                )
             }
 
             val dialerRoleLauncher =
                 rememberLauncherForActivityResult(
                     ActivityResultContracts.StartActivityForResult()
                 ) {
-                    dialerRoleHeld = isDialerRoleHeld()
+                    dialerRoleHeld =
+                        isDialerRoleHeld()
                 }
 
             var callPermissionGranted by remember {
                 mutableStateOf(
                     checkSelfPermission(
                         Manifest.permission.CALL_PHONE
-                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) ==
+                            android.content.pm.PackageManager.PERMISSION_GRANTED
                 )
             }
 
@@ -127,7 +132,9 @@ class MainActivity : ComponentActivity() {
             }
 
             val loginViewModel: LoginViewModel =
-                viewModel(factory = loginFactory)
+                viewModel(
+                    factory = loginFactory
+                )
 
             val loginState by
             loginViewModel.uiState
@@ -141,20 +148,38 @@ class MainActivity : ComponentActivity() {
 
             val adminViewModel:
                     DefaultAdminViewModel =
-                viewModel(factory = adminFactory)
+                viewModel(
+                    factory = adminFactory
+                )
 
             val adminState by
             adminViewModel.state
                 .collectAsStateWithLifecycle()
 
             var showGoogleConsent by
-                remember { mutableStateOf(false) }
+            remember {
+                mutableStateOf(false)
+            }
 
             var showLogoutConfirmation by
-                remember { mutableStateOf(false) }
+            remember {
+                mutableStateOf(false)
+            }
 
+            /*
+             * IMPORTANT:
+             *
+             * This changes every time the user logs out.
+             *
+             * The WatchmanViewModel is keyed with this value below,
+             * which guarantees that a new login starts with a fresh
+             * Watchman workflow instead of restoring the previous
+             * call sequence.
+             */
             var loginSessionId by
-                remember { mutableIntStateOf(0) }
+            remember {
+                mutableIntStateOf(0)
+            }
 
             val authorizationLauncher =
                 rememberLauncherForActivityResult(
@@ -168,7 +193,7 @@ class MainActivity : ComponentActivity() {
                     ) {
                         loginViewModel.authorizationFailed(
                             "Google access was not granted. " +
-                                "Society administrator access remains blocked."
+                                    "Society administrator access remains blocked."
                         )
                         return@rememberLauncherForActivityResult
                     }
@@ -186,7 +211,9 @@ class MainActivity : ComponentActivity() {
                                 loginViewModel
                             )
                         }
+
                     } catch (e: Exception) {
+
                         loginViewModel.authorizationFailed(
                             e.message
                                 ?: "Unable to complete Google authorization"
@@ -195,22 +222,27 @@ class MainActivity : ComponentActivity() {
                 }
 
             fun requestGoogleAuthorization() {
+
                 showGoogleConsent = false
 
                 try {
+
                     googleAuthorizationRepository
                         .authorize()
                         .addOnSuccessListener { result ->
 
                             if (result.hasResolution()) {
+
                                 val pendingIntent =
                                     result.pendingIntent
 
                                 if (pendingIntent == null) {
+
                                     loginViewModel
                                         .authorizationFailed(
                                             "Google authorization requires a user action."
                                         )
+
                                     return@addOnSuccessListener
                                 }
 
@@ -219,7 +251,9 @@ class MainActivity : ComponentActivity() {
                                         pendingIntent.intentSender
                                     ).build()
                                 )
+
                             } else {
+
                                 lifecycleScope.launch {
                                     processAuthorizationResult(
                                         result,
@@ -229,12 +263,15 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                         .addOnFailureListener { error ->
+
                             loginViewModel.authorizationFailed(
                                 error.message
                                     ?: "Unable to request Google access"
                             )
                         }
+
                 } catch (e: Exception) {
+
                     loginViewModel.authorizationFailed(
                         e.message
                             ?: "Unable to request Google access"
@@ -243,12 +280,15 @@ class MainActivity : ComponentActivity() {
             }
 
             BackHandler(
-                enabled = loginState.stage == LoginStage.LOGGED_IN
+                enabled =
+                    loginState.stage ==
+                            LoginStage.LOGGED_IN
             ) {
                 showLogoutConfirmation = true
             }
 
             when {
+
                 loginState.stage !=
                         LoginStage.LOGGED_IN -> {
 
@@ -263,15 +303,19 @@ class MainActivity : ComponentActivity() {
                         onChangePassword =
                             loginViewModel::changePassword,
                         onGoogleLogin = {
+
                             if (
                                 loginState.stage ==
                                 LoginStage.GOOGLE_AUTH
                             ) {
+
                                 loginViewModel.googleLogin()
+
                             } else if (
                                 loginState.stage ==
                                 LoginStage.GOOGLE_CONSENT
                             ) {
+
                                 if (
                                     loginState.user
                                         ?.googleAuthorized == true
@@ -285,6 +329,7 @@ class MainActivity : ComponentActivity() {
                     )
 
                     if (showGoogleConsent) {
+
                         AlertDialog(
                             onDismissRequest = {
                                 showGoogleConsent = false
@@ -295,15 +340,15 @@ class MainActivity : ComponentActivity() {
                             text = {
                                 Text(
                                     "My Gate needs access to the " +
-                                        "registered society Gmail account's " +
-                                        "Google Drive and Contacts. " +
-                                        "Drive is used for shared society " +
-                                        "metadata and future visitor files; " +
-                                        "Contacts are used to synchronize " +
-                                        "society contacts to the gate phone.\n\n" +
-                                        "If you do not grant both permissions, " +
-                                        "the Society Administrator account " +
-                                        "will not be allowed into My Gate."
+                                            "registered society Gmail account's " +
+                                            "Google Drive and Contacts. " +
+                                            "Drive is used for shared society " +
+                                            "metadata and future visitor files; " +
+                                            "Contacts are used to synchronize " +
+                                            "society contacts to the gate phone.\n\n" +
+                                            "If you do not grant both permissions, " +
+                                            "the Society Administrator account " +
+                                            "will not be allowed into My Gate."
                                 )
                             },
                             confirmButton = {
@@ -380,10 +425,13 @@ class MainActivity : ComponentActivity() {
                         loginState.user?.societyId
 
                     if (societyId == null) {
+
                         ErrorScreen(
                             "Society information is missing."
                         )
+
                     } else {
+
                         val societyAdminFactory =
                             remember(societyId) {
                                 SocietyAdminViewModelFactory(
@@ -413,6 +461,7 @@ class MainActivity : ComponentActivity() {
                                     username,
                                     displayName,
                                     temporaryPassword ->
+
                                 societyAdminViewModel
                                     .createWatchman(
                                         username,
@@ -422,11 +471,14 @@ class MainActivity : ComponentActivity() {
                             },
                             onRenameSociety = {
                                     name ->
+
                                 societyAdminViewModel
                                     .renameSociety(name)
                             },
                             onConfigureKiosk = {
+
                                 lifecycleScope.launch {
+
                                     appConfigRepository
                                         .configureKiosk(
                                             societyId
@@ -439,9 +491,12 @@ class MainActivity : ComponentActivity() {
                                             this@MainActivity
                                         )
                                     ) {
+
                                         societyAdminViewModel
                                             .load()
+
                                     } else {
+
                                         societyAdminViewModel
                                             .setError(
                                                 "This phone is not provisioned as a My Gate device owner. Configure Android device-owner/kiosk provisioning first."
@@ -457,16 +512,26 @@ class MainActivity : ComponentActivity() {
                 }
 
                 else -> {
+
                     loginState.user?.let { user ->
-                        if (user.role == UserRole.WATCHMAN) {
+
+                        if (
+                            user.role ==
+                            UserRole.WATCHMAN
+                        ) {
+
                             LaunchedEffect(user.id) {
+
                                 val config =
                                     appConfigRepository.get()
+
                                 if (
-                                    config.deviceMode == "KIOSK" &&
+                                    config.deviceMode ==
+                                    "KIOSK" &&
                                     config.configuredSocietyId ==
                                     user.societyId
                                 ) {
+
                                     KioskManager(
                                         this@MainActivity
                                     ).enter(
@@ -474,55 +539,88 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
                             }
-                            val watchmanFactory =
-                                remember(user.societyId) {
-                                    WatchmanViewModelFactory(
+
+                            /*
+                             * IMPORTANT:
+                             *
+                             * loginSessionId is part of the key.
+                             *
+                             * After logout:
+                             *
+                             *     loginSessionId++
+                             *
+                             * On the next login Compose therefore
+                             * creates a NEW WatchmanViewModel.
+                             *
+                             * This prevents the previous call page,
+                             * active call and history from reappearing.
+                             */
+                            key(
+                                loginSessionId,
+                                user.id
+                            ) {
+
+                                val watchmanFactory =
+                                    remember(
                                         user.societyId
-                                            ?: -1L,
-                                        database.gateContactDao(),
-                                        applicationContext
+                                    ) {
+                                        WatchmanViewModelFactory(
+                                            user.societyId
+                                                ?: -1L,
+                                            database.gateContactDao(),
+                                            applicationContext
+                                        )
+                                    }
+
+                                val watchmanViewModel:
+                                        WatchmanViewModel =
+                                    viewModel(
+                                        key =
+                                            "watchman-$loginSessionId-${user.id}",
+                                        factory =
+                                            watchmanFactory
                                     )
-                                }
 
-                            val watchmanViewModel:
-                                WatchmanViewModel =
-                                viewModel(
-                                    factory = watchmanFactory
-                                )
-
-                            val watchmanState by
+                                val watchmanState by
                                 watchmanViewModel.state
                                     .collectAsStateWithLifecycle()
 
-                            WatchmanScreen(
-                                user = user,
-                                state = watchmanState,
-                                dialerRoleHeld = dialerRoleHeld,
-                                onCallAlias =
-                                    watchmanViewModel::callAlias,
-                                onMockCallAlias =
-                                    watchmanViewModel::mockCallAlias,
-                                onCancelCall =
-                                    watchmanViewModel::cancelCall,
-                                onSkipCall =
-                                    watchmanViewModel::skipCall,
-                                onRequestDialerRole = {
-                                    requestDialerRole(
-                                        dialerRoleLauncher
-                                    )
-                                },
-                                callPermissionGranted =
-                                    callPermissionGranted,
-                                onRequestCallPermission = {
-                                    callPermissionLauncher.launch(
-                                        Manifest.permission.CALL_PHONE
-                                    )
-                                },
-                                onLogout = {
-                                    showLogoutConfirmation = true
-                                }
-                            )
+                                WatchmanScreen(
+                                    user = user,
+                                    state = watchmanState,
+                                    dialerRoleHeld =
+                                        dialerRoleHeld,
+                                    onCallAlias =
+                                        watchmanViewModel::callAlias,
+                                    onMockCallAlias =
+                                        watchmanViewModel::mockCallAlias,
+                                    onCancelCall =
+                                        watchmanViewModel::cancelCall,
+                                    onSkipCall =
+                                        watchmanViewModel::skipCall,
+                                    onRequestDialerRole = {
+                                        requestDialerRole(
+                                            dialerRoleLauncher
+                                        )
+                                    },
+                                    callPermissionGranted =
+                                        callPermissionGranted,
+                                    onRequestCallPermission = {
+                                        callPermissionLauncher.launch(
+                                            Manifest.permission.CALL_PHONE
+                                        )
+                                    },
+                                    onLogout = {
+                                        showLogoutConfirmation = true
+                                    },
+                                    onHome = {
+                                        watchmanViewModel.returnHome()
+                                    }
+                                )
+                            }
+
                         } else {
+
                             ErrorScreen(
                                 "Unsupported user role."
                             )
@@ -532,21 +630,40 @@ class MainActivity : ComponentActivity() {
             }
 
             if (showLogoutConfirmation) {
+
                 AlertDialog(
                     onDismissRequest = {
                         showLogoutConfirmation = false
                     },
-                    title = { Text("Log out?") },
+                    title = {
+                        Text("Log out?")
+                    },
                     text = {
-                        Text("Are you sure you want to log out of My Gate?")
+                        Text(
+                            "Are you sure you want to log out of My Gate?"
+                        )
                     },
                     confirmButton = {
+
                         Button(
                             onClick = {
+
                                 showLogoutConfirmation = false
+
+                                /*
+                                 * Completely terminate any active
+                                 * phone call before leaving Watchman.
+                                 */
                                 MyGateCallController.reset()
+
                                 IncomingCallManager.clear()
+
+                                /*
+                                 * Force a fresh Watchman workflow
+                                 * after the next login.
+                                 */
                                 loginSessionId++
+
                                 loginViewModel.logout()
                             }
                         ) {
@@ -554,6 +671,7 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     dismissButton = {
+
                         Button(
                             onClick = {
                                 showLogoutConfirmation = false
@@ -568,13 +686,18 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun isDialerRoleHeld(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+
+        if (
+            Build.VERSION.SDK_INT <
+            Build.VERSION_CODES.Q
+        ) {
             return false
         }
 
         val roleManager =
-            getSystemService(RoleManager::class.java)
-                ?: return false
+            getSystemService(
+                RoleManager::class.java
+            ) ?: return false
 
         return roleManager.isRoleHeld(
             RoleManager.ROLE_DIALER
@@ -583,14 +706,20 @@ class MainActivity : ComponentActivity() {
 
     private fun requestDialerRole(
         launcher:
-            androidx.activity.result.ActivityResultLauncher<Intent>
+        androidx.activity.result.ActivityResultLauncher<Intent>
     ) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+
+        if (
+            Build.VERSION.SDK_INT <
+            Build.VERSION_CODES.Q
+        ) {
             return
         }
 
         val roleManager =
-            getSystemService(RoleManager::class.java)
+            getSystemService(
+                RoleManager::class.java
+            )
 
         if (
             roleManager != null &&
@@ -601,6 +730,7 @@ class MainActivity : ComponentActivity() {
                 RoleManager.ROLE_DIALER
             )
         ) {
+
             launcher.launch(
                 roleManager.createRequestRoleIntent(
                     RoleManager.ROLE_DIALER
@@ -613,25 +743,35 @@ class MainActivity : ComponentActivity() {
         result: AuthorizationResult,
         loginViewModel: LoginViewModel
     ) {
-        val token = result.accessToken
+
+        val token =
+            result.accessToken
 
         if (token.isNullOrBlank()) {
+
             loginViewModel.authorizationFailed(
                 "Google did not return an access token."
             )
+
             return
         }
 
-        val granted = result.grantedScopes.toSet()
+        val granted =
+            result.grantedScopes.toSet()
+
         val required =
             GoogleScopes.required
                 .map { it.scopeUri }
                 .toSet()
 
-        if (!granted.containsAll(required)) {
+        if (
+            !granted.containsAll(required)
+        ) {
+
             loginViewModel.authorizationFailed(
                 "Both Google Drive and Contacts permissions are required."
             )
+
             return
         }
 
@@ -639,7 +779,10 @@ class MainActivity : ComponentActivity() {
             loginViewModel.uiState.value
 
         val expectedEmail =
-            (state.user?.username ?: state.username)
+            (
+                    state.user?.username
+                        ?: state.username
+                    )
                 .trim()
                 .lowercase()
 
@@ -648,16 +791,14 @@ class MainActivity : ComponentActivity() {
             token
         )
 
-        /*
-         * A Gmail account can be used on another phone even when
-         * that phone has never had the society created locally.
-         * In that case the canonical Drive metadata is the discovery
-         * source for the local Room cache.
-         */
-        var user = state.user
-        var societyId = user?.societyId
+        var user =
+            state.user
+
+        var societyId =
+            user?.societyId
 
         if (user == null) {
+
             val discovered =
                 googleDataRepository.discoverSociety(
                     token,
@@ -666,21 +807,29 @@ class MainActivity : ComponentActivity() {
 
             val cloudName =
                 discovered.getOrElse {
+
                     loginViewModel.authorizationFailed(
                         "Unable to discover the society in Google Drive: " +
-                            (it.message ?: "unknown error")
+                                (
+                                        it.message
+                                            ?: "unknown error"
+                                        )
                     )
+
                     return
                 }
 
             if (cloudName.isNullOrBlank()) {
+
                 loginViewModel.authorizationFailed(
                     "This Gmail account is not registered with a My Gate society yet."
                 )
+
                 return
             }
 
             try {
+
                 societyId =
                     societyRepository.createSociety(
                         cloudName,
@@ -691,17 +840,24 @@ class MainActivity : ComponentActivity() {
                     authRepository.findUser(
                         expectedEmail
                     )
+
             } catch (e: Exception) {
+
                 user =
                     authRepository.findUser(
                         expectedEmail
                     )
             }
 
-            if (user == null || societyId == null) {
+            if (
+                user == null ||
+                societyId == null
+            ) {
+
                 loginViewModel.authorizationFailed(
                     "Unable to create the local society configuration."
                 )
+
                 return
             }
 
@@ -712,19 +868,25 @@ class MainActivity : ComponentActivity() {
             user == null ||
             societyId == null
         ) {
+
             loginViewModel.authorizationFailed(
                 "Society information is missing."
             )
+
             return
         }
 
         val society =
-            societyRepository.findById(societyId)
+            societyRepository.findById(
+                societyId
+            )
 
         if (society == null) {
+
             loginViewModel.authorizationFailed(
                 "Society no longer exists on this device."
             )
+
             return
         }
 
@@ -734,48 +896,60 @@ class MainActivity : ComponentActivity() {
         )
 
         val syncResult =
-            if (society.cloudMetadataDirty) {
-                googleDataRepository.updateSocietyMetadata(
-                    token,
-                    society.name,
-                    society.adminEmail,
-                    society.logoPath
-                ).fold(
-                    onSuccess = {
-                        societyRepository
-                            .markCloudMetadataSynced(
-                                society.id
-                            )
+            if (
+                society.cloudMetadataDirty
+            ) {
 
-                        googleDataRepository
-                            .synchronizeSociety(
-                                token,
-                                society.name,
-                                society.adminEmail
-                            )
-                    },
-                    onFailure = {
-                        Result.failure(it)
-                    }
-                )
+                googleDataRepository
+                    .updateSocietyMetadata(
+                        token,
+                        society.name,
+                        society.adminEmail,
+                        society.logoPath
+                    )
+                    .fold(
+                        onSuccess = {
+
+                            societyRepository
+                                .markCloudMetadataSynced(
+                                    society.id
+                                )
+
+                            googleDataRepository
+                                .synchronizeSociety(
+                                    token,
+                                    society.name,
+                                    society.adminEmail
+                                )
+                        },
+                        onFailure = {
+                            Result.failure(it)
+                        }
+                    )
+
             } else {
-                googleDataRepository.synchronizeSociety(
-                    token,
-                    society.name,
-                    society.adminEmail
-                )
+
+                googleDataRepository
+                    .synchronizeSociety(
+                        token,
+                        society.name,
+                        society.adminEmail
+                    )
             }
 
         syncResult
             .onSuccess { synced ->
+
                 if (
                     !society.cloudMetadataDirty &&
                     synced.societyName.isNotBlank()
                 ) {
-                    societyRepository.applyCloudMetadata(
-                        society.id,
-                        synced.societyName
-                    )
+
+                    societyRepository
+                        .applyCloudMetadata(
+                            society.id,
+                            synced.societyName
+                        )
                 }
 
                 syncContacts(
@@ -783,25 +957,32 @@ class MainActivity : ComponentActivity() {
                     synced.contacts
                 )
 
-                loginViewModel.authorizationSucceeded(
-                    user
-                )
+                loginViewModel
+                    .authorizationSucceeded(
+                        user
+                    )
             }
             .onFailure { error ->
+
                 GoogleDataSession.clear()
 
                 loginViewModel.authorizationFailed(
                     "Google access was granted, but My Gate " +
-                        "could not synchronize society data: " +
-                            (error.message ?: "${error.javaClass.simpleName}: $error")
+                            "could not synchronize society data: " +
+                            (
+                                    error.message
+                                        ?: "${error.javaClass.simpleName}: $error"
+                                    )
                 )
             }
     }
 
     private suspend fun syncContacts(
         societyId: Long,
-        contacts: List<com.mavaze.mygate.data.repository.GoogleContact>
+        contacts:
+        List<com.mavaze.mygate.data.repository.GoogleContact>
     ) {
+
         val dao =
             database.gateContactDao()
 
@@ -812,6 +993,7 @@ class MainActivity : ComponentActivity() {
 
         val entities =
             contacts.map { contact ->
+
                 GateContact(
                     societyId = societyId,
                     googleResourceName =
@@ -825,7 +1007,9 @@ class MainActivity : ComponentActivity() {
                     alias =
                         contact.alias
                             ?.trim()
-                            ?.takeIf { it.isNotBlank() },
+                            ?.takeIf {
+                                it.isNotBlank()
+                            },
                     priority =
                         contact.priority
                 )
@@ -841,7 +1025,6 @@ class MainActivity : ComponentActivity() {
             "Room resident replacement complete: inserted=${entities.size}"
         )
     }
-
 }
 
 class LoginViewModelFactory(
@@ -852,12 +1035,15 @@ class LoginViewModelFactory(
     override fun <T : ViewModel> create(
         modelClass: Class<T>
     ): T {
+
         if (
             modelClass.isAssignableFrom(
                 LoginViewModel::class.java
             )
         ) {
+
             @Suppress("UNCHECKED_CAST")
+
             return LoginViewModel(
                 authRepository,
                 googleAuthRepository
@@ -879,12 +1065,15 @@ class WatchmanViewModelFactory(
     override fun <T : ViewModel> create(
         modelClass: Class<T>
     ): T {
+
         if (
             modelClass.isAssignableFrom(
                 WatchmanViewModel::class.java
             )
         ) {
+
             @Suppress("UNCHECKED_CAST")
+
             return WatchmanViewModel(
                 societyId,
                 dao,
@@ -905,13 +1094,18 @@ class DefaultAdminViewModelFactory(
     override fun <T : ViewModel> create(
         modelClass: Class<T>
     ): T {
+
         if (
             modelClass.isAssignableFrom(
                 DefaultAdminViewModel::class.java
             )
         ) {
+
             @Suppress("UNCHECKED_CAST")
-            return DefaultAdminViewModel(repository) as T
+
+            return DefaultAdminViewModel(
+                repository
+            ) as T
         }
 
         throw IllegalArgumentException(
@@ -928,12 +1122,15 @@ class SocietyAdminViewModelFactory(
     override fun <T : ViewModel> create(
         modelClass: Class<T>
     ): T {
+
         if (
             modelClass.isAssignableFrom(
                 SocietyAdminViewModel::class.java
             )
         ) {
+
             @Suppress("UNCHECKED_CAST")
+
             return SocietyAdminViewModel(
                 repository,
                 societyId
@@ -955,14 +1152,29 @@ private fun MyGateLoginScreen(
     onChangePassword: (String, String) -> Unit,
     onGoogleLogin: () -> Unit
 ) {
-    var password by remember { mutableStateOf("") }
-    var newPassword by remember { mutableStateOf("") }
-    var confirmPassword by remember { mutableStateOf("") }
+
+    var password by
+    remember {
+        mutableStateOf("")
+    }
+
+    var newPassword by
+    remember {
+        mutableStateOf("")
+    }
+
+    var confirmPassword by
+    remember {
+        mutableStateOf("")
+    }
 
     Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+        modifier =
+            Modifier.fillMaxSize(),
+        color =
+            MaterialTheme.colorScheme.background
     ) {
+
         Column(
             modifier =
                 Modifier
@@ -973,105 +1185,153 @@ private fun MyGateLoginScreen(
             verticalArrangement =
                 Arrangement.Center
         ) {
+
             Text(
                 "My Gate",
                 style =
                     MaterialTheme.typography.headlineLarge
             )
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(
+                Modifier.height(32.dp)
+            )
 
             when (state.stage) {
+
                 LoginStage.USERNAME -> {
+
                     OutlinedTextField(
                         value = state.username,
-                        onValueChange = onUsernameChanged,
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Username") },
+                        onValueChange =
+                            onUsernameChanged,
+                        modifier =
+                            Modifier.fillMaxWidth(),
+                        label = {
+                            Text("Username")
+                        },
                         singleLine = true
                     )
 
-                    Spacer(Modifier.height(24.dp))
+                    Spacer(
+                        Modifier.height(24.dp)
+                    )
 
                     Button(
-                        onClick = onUsernameContinue,
-                        enabled = !state.busy,
-                        modifier = Modifier.fillMaxWidth()
+                        onClick =
+                            onUsernameContinue,
+                        enabled =
+                            !state.busy,
+                        modifier =
+                            Modifier.fillMaxWidth()
                     ) {
                         Text("Continue")
                     }
                 }
 
                 LoginStage.LOCAL_PASSWORD -> {
+
                     Text(
-                        state.user?.displayName ?: state.username,
+                        state.user?.displayName
+                            ?: state.username,
                         style =
                             MaterialTheme.typography.titleMedium
                     )
 
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(
+                        Modifier.height(16.dp)
+                    )
 
                     OutlinedTextField(
                         value = password,
-                        onValueChange = { password = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Password") },
+                        onValueChange = {
+                            password = it
+                        },
+                        modifier =
+                            Modifier.fillMaxWidth(),
+                        label = {
+                            Text("Password")
+                        },
                         visualTransformation =
                             PasswordVisualTransformation(),
                         singleLine = true
                     )
 
-                    Spacer(Modifier.height(24.dp))
+                    Spacer(
+                        Modifier.height(24.dp)
+                    )
 
                     Button(
                         onClick = {
-                            onPasswordLogin(password)
+                            onPasswordLogin(
+                                password
+                            )
                         },
-                        enabled = !state.busy,
-                        modifier = Modifier.fillMaxWidth()
+                        enabled =
+                            !state.busy,
+                        modifier =
+                            Modifier.fillMaxWidth()
                     ) {
                         Text("Login")
                     }
                 }
 
                 LoginStage.CHANGE_PASSWORD -> {
+
                     Text(
                         "Change Password",
                         style =
                             MaterialTheme.typography.headlineSmall
                     )
 
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(
+                        Modifier.height(12.dp)
+                    )
 
                     Text(
                         "Your temporary password must be changed before continuing."
                     )
 
-                    Spacer(Modifier.height(24.dp))
+                    Spacer(
+                        Modifier.height(24.dp)
+                    )
 
                     OutlinedTextField(
                         value = newPassword,
-                        onValueChange = { newPassword = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("New password") },
+                        onValueChange = {
+                            newPassword = it
+                        },
+                        modifier =
+                            Modifier.fillMaxWidth(),
+                        label = {
+                            Text("New password")
+                        },
                         visualTransformation =
                             PasswordVisualTransformation(),
                         singleLine = true
                     )
 
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(
+                        Modifier.height(12.dp)
+                    )
 
                     OutlinedTextField(
                         value = confirmPassword,
-                        onValueChange = { confirmPassword = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Confirm password") },
+                        onValueChange = {
+                            confirmPassword = it
+                        },
+                        modifier =
+                            Modifier.fillMaxWidth(),
+                        label = {
+                            Text("Confirm password")
+                        },
                         visualTransformation =
                             PasswordVisualTransformation(),
                         singleLine = true
                     )
 
-                    Spacer(Modifier.height(24.dp))
+                    Spacer(
+                        Modifier.height(24.dp)
+                    )
 
                     Button(
                         onClick = {
@@ -1080,92 +1340,136 @@ private fun MyGateLoginScreen(
                                 confirmPassword
                             )
                         },
-                        enabled = !state.busy,
-                        modifier = Modifier.fillMaxWidth()
+                        enabled =
+                            !state.busy,
+                        modifier =
+                            Modifier.fillMaxWidth()
                     ) {
                         Text("Change Password")
                     }
                 }
 
                 LoginStage.GOOGLE_AUTH -> {
+
                     Text(
                         "Society Administrator",
                         style =
                             MaterialTheme.typography.titleMedium
                     )
 
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(
+                        Modifier.height(16.dp)
+                    )
 
                     Text(
                         "Sign in with the registered society Gmail account."
                     )
 
-                    Spacer(Modifier.height(24.dp))
+                    Spacer(
+                        Modifier.height(24.dp)
+                    )
 
                     Button(
-                        onClick = onGoogleLogin,
-                        enabled = !state.busy,
-                        modifier = Modifier.fillMaxWidth()
+                        onClick =
+                            onGoogleLogin,
+                        enabled =
+                            !state.busy,
+                        modifier =
+                            Modifier.fillMaxWidth()
                     ) {
-                        Text("Continue with Google")
+                        Text(
+                            "Continue with Google"
+                        )
                     }
                 }
 
                 LoginStage.GOOGLE_CONSENT -> {
+
                     Text(
                         "Google access required",
                         style =
                             MaterialTheme.typography.headlineSmall
                     )
 
-                    Spacer(Modifier.height(16.dp))
-
-                    Text(
-                        if (state.user?.googleAuthorized == true)
-                            "Continue to refresh access to the society's Google Drive and Contacts."
-                        else
-                            "My Gate needs the registered society Gmail's Drive and Contacts access before this account can enter the app."
+                    Spacer(
+                        Modifier.height(16.dp)
                     )
 
-                    Spacer(Modifier.height(24.dp))
+                    Text(
+                        if (
+                            state.user?.googleAuthorized ==
+                            true
+                        ) {
+                            "Continue to refresh access to the society's Google Drive and Contacts."
+                        } else {
+                            "My Gate needs the registered society Gmail's Drive and Contacts access before this account can enter the app."
+                        }
+                    )
+
+                    Spacer(
+                        Modifier.height(24.dp)
+                    )
 
                     Button(
-                        onClick = onGoogleLogin,
-                        enabled = !state.busy,
-                        modifier = Modifier.fillMaxWidth()
+                        onClick =
+                            onGoogleLogin,
+                        enabled =
+                            !state.busy,
+                        modifier =
+                            Modifier.fillMaxWidth()
                     ) {
+
                         Text(
-                            if (state.user?.googleAuthorized == true)
+                            if (
+                                state.user?.googleAuthorized ==
+                                true
+                            ) {
                                 "Continue"
-                            else
+                            } else {
                                 "Grant Google access"
+                            }
                         )
                     }
                 }
 
                 LoginStage.LOGGED_IN -> {
+
                     Text(
                         "Welcome",
                         style =
                             MaterialTheme.typography.headlineMedium
                     )
 
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(
+                        Modifier.height(12.dp)
+                    )
 
-                    Text(state.user?.displayName ?: "")
+                    Text(
+                        state.user?.displayName
+                            ?: ""
+                    )
                 }
             }
 
             if (state.busy) {
-                Spacer(Modifier.height(16.dp))
+
+                Spacer(
+                    Modifier.height(16.dp)
+                )
+
                 Text("Please wait…")
             }
 
             state.error?.let {
-                Spacer(Modifier.height(16.dp))
+
+                Spacer(
+                    Modifier.height(16.dp)
+                )
+
                 Text(
                     it,
-                    color = MaterialTheme.colorScheme.error
+                    color =
+                        MaterialTheme.colorScheme.error
                 )
             }
         }
@@ -1173,8 +1477,14 @@ private fun MyGateLoginScreen(
 }
 
 @Composable
-private fun ErrorScreen(message: String) {
-    Surface(Modifier.fillMaxSize()) {
+private fun ErrorScreen(
+    message: String
+) {
+
+    Surface(
+        Modifier.fillMaxSize()
+    ) {
+
         Column(
             Modifier
                 .fillMaxSize()
@@ -1184,9 +1494,11 @@ private fun ErrorScreen(message: String) {
             horizontalAlignment =
                 Alignment.CenterHorizontally
         ) {
+
             Text(
                 message,
-                color = MaterialTheme.colorScheme.error
+                color =
+                    MaterialTheme.colorScheme.error
             )
         }
     }
