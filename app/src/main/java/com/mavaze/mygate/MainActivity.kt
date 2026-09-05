@@ -44,7 +44,7 @@ import com.mavaze.mygate.telephony.IncomingCallManager
 import com.mavaze.mygate.telephony.MyGateCallController
 import com.mavaze.mygate.ui.admin.*
 import com.mavaze.mygate.ui.login.*
-import com.mavaze.mygate.ui.watchman.WatchmanScreen
+import com.mavaze.mygate.ui.watchman.WatchmanNavHost
 import com.mavaze.mygate.ui.watchman.WatchmanViewModel
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -122,6 +122,20 @@ class MainActivity : ComponentActivity() {
                     ActivityResultContracts.RequestPermission()
                 ) { granted ->
                     callPermissionGranted = granted
+                }
+
+            var callLogPermissionGranted by remember {
+                mutableStateOf(
+                    checkSelfPermission(Manifest.permission.READ_CALL_LOG) ==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED
+                )
+            }
+
+            val callLogPermissionLauncher =
+                rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission()
+                ) { granted ->
+                    callLogPermissionGranted = granted
                 }
 
             val loginFactory = remember {
@@ -585,38 +599,38 @@ class MainActivity : ComponentActivity() {
                                 watchmanViewModel.state
                                     .collectAsStateWithLifecycle()
 
-                                WatchmanScreen(
+                                WatchmanNavHost(
                                     user = user,
                                     state = watchmanState,
-                                    dialerRoleHeld =
-                                        dialerRoleHeld,
-                                    onCallAlias =
-                                        watchmanViewModel::callAlias,
-                                    onMockCallAlias =
-                                        watchmanViewModel::mockCallAlias,
-                                    onCancelCall =
-                                        watchmanViewModel::cancelCall,
-                                    onSkipCall =
-                                        watchmanViewModel::skipCall,
+                                    onCallAlias = watchmanViewModel::callAlias,
+                                    onMockCallAlias = watchmanViewModel::mockCallAlias,
+                                    onCancelCall = watchmanViewModel::cancelCall,
+                                    onSkipCall = watchmanViewModel::skipCall,
                                     onRequestDialerRole = {
                                         requestDialerRole(
                                             dialerRoleLauncher
                                         )
                                     },
-                                    callPermissionGranted =
-                                        callPermissionGranted,
+                                    dialerRoleHeld = dialerRoleHeld,
+                                    callPermissionGranted = callPermissionGranted,
                                     onRequestCallPermission = {
                                         callPermissionLauncher.launch(
                                             Manifest.permission.CALL_PHONE
                                         )
                                     },
+                                    callLogPermissionGranted = callLogPermissionGranted,
+                                    onRequestCallLogPermission = {
+                                        callLogPermissionLauncher.launch(
+                                            Manifest.permission.READ_CALL_LOG
+                                        )
+                                    },
+                                    onRefreshCallHistory = watchmanViewModel::refreshNativeCallHistory,
                                     onLogout = {
                                         showLogoutConfirmation = true
-                                    },
-                                    onHome = {
-                                        watchmanViewModel.returnHome()
                                     }
                                 )
+
+
                             }
 
                         } else {

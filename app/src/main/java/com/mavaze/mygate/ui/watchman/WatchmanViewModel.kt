@@ -1,9 +1,11 @@
 package com.mavaze.mygate.ui.watchman
 
 import android.Manifest
+import android.provider.CallLog
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.SystemClock
+import android.text.format.DateFormat
 import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.ViewModel
@@ -20,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONArray
+import java.util.Date
 
 data class WatchmanAlias(
     val alias: String,
@@ -32,6 +35,14 @@ data class ActiveCall(
     val attemptNumber: Int,
     val totalContacts: Int,
     val elapsedSeconds: Long = 0L
+)
+
+data class NativeCallHistoryEntry(
+    val id: Long,
+    val contactName: String,
+    val alias: String,
+    val incoming: Boolean,
+    val details: String
 )
 
 data class CallHistoryEntry(
@@ -47,6 +58,7 @@ data class WatchmanUiState(
     val aliases: List<WatchmanAlias> = emptyList(),
     val activeCall: ActiveCall? = null,
     val history: List<CallHistoryEntry> = emptyList(),
+    val nativeCallHistory: List<NativeCallHistoryEntry> = emptyList(),
     val connected: Boolean = false,
     val busy: Boolean = false,
     val error: String? = null
@@ -90,6 +102,9 @@ class WatchmanViewModel(
 
         viewModelScope.launch {
             loadAliases()
+            if (applicationContext.checkSelfPermission(android.Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED) {
+                loadNativeCallHistory()
+            }
         }
     }
 
@@ -168,8 +183,78 @@ class WatchmanViewModel(
             )
     }
 
+    fun refreshNativeCallHistory() {
+        if (applicationContext.checkSelfPermission(android.Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) return
+        viewModelScope.launch { loadNativeCallHistory() }
+    }
+
+    private suspend fun loadNativeCallHistory() {
+        val contacts = dao.getCallableForSociety(societyId)
+        val phoneToContact = mutableMapOf<String, GateContact>()
+        contacts.forEach { contact ->
+            try {
+                val array = JSONArray(contact.phoneNumbersJson)
+                for (i in 0 until array.length()) {
+                    val number = normalizePhone(array.optString(i))
+                    if (number.isNotBlank()) phoneToContact[number] = contact
+                }
+            } catch (_: Exception) { }
+        }
+
+        val result = mutableListOf<NativeCallHistoryEntry>()
+        val projection = arrayOf(
+            CallLog.Calls._ID, CallLog.Calls.NUMBER, CallLog.Calls.TYPE,
+            CallLog.Calls.DATE, CallLog.Calls.DURATION
+        )
+        val sort = "${CallLog.Calls.DATE} DESC"
+        try {
+            applicationContext.contentResolver.query(
+                CallLog.Calls.CONTENT_URI, projection, null, null, sort
+            )?.use { cursor ->
+            val idCol = cursor.getColumnIndexOrThrow(CallLog.Calls._ID)
+            val numberCol = cursor.getColumnIndexOrThrow(CallLog.Calls.NUMBER)
+            val typeCol = cursor.getColumnIndexOrThrow(CallLog.Calls.TYPE)
+            val dateCol = cursor.getColumnIndexOrThrow(CallLog.Calls.DATE)
+            val durationCol = cursor.getColumnIndexOrThrow(CallLog.Calls.DURATION)
+            while (cursor.moveToNext() && result.size < 100) {
+                val type = cursor.getInt(typeCol)
+                if (type != CallLog.Calls.INCOMING_TYPE && type != CallLog.Calls.OUTGOING_TYPE) continue
+                val contact = phoneToContact[normalizePhone(cursor.getString(numberCol))] ?: continue
+                val alias = contact.alias?.trim().orEmpty()
+                if (alias.isBlank()) continue
+                val incoming = type == CallLog.Calls.INCOMING_TYPE
+                val timestamp = cursor.getLong(dateCol)
+                val duration = cursor.getLong(durationCol)
+                val time = DateFormat.format("dd MMM, hh:mm a", Date(timestamp)).toString()
+                val durationText = formatDuration(duration)
+                result += NativeCallHistoryEntry(
+                    id = cursor.getLong(idCol),
+                    contactName = contact.displayName.ifBlank { "Resident" },
+                    alias = alias,
+                    incoming = incoming,
+                    details = "${if (incoming) "Incoming" else "Outgoing"} · $time · $durationText"
+                )
+            }
+            }
+        } catch (securityException: SecurityException) {
+            Log.w("MyGateWatchman", "Call log permission is not available", securityException)
+        }
+        _state.value = _state.value.copy(nativeCallHistory = result)
+    }
+
+    private fun normalizePhone(value: String?): String {
+        val digits = value.orEmpty().filter { it.isDigit() }
+        return if (digits.length > 10) digits.takeLast(10) else digits
+    }
+
+    private fun formatDuration(seconds: Long): String {
+        val minutes = seconds / 60
+        val remaining = seconds % 60
+        return "%02d:%02d".format(minutes, remaining)
+    }
+
     fun mockCallAlias(
-        alias: String
+        alias: WatchmanAlias
     ) {
 
         if (
@@ -186,7 +271,7 @@ class WatchmanViewModel(
             val contacts =
                 dao.getForAlias(
                     societyId,
-                    alias
+                    alias.alias
                 ).filter {
 
                     it.phoneNumbersJson
@@ -265,7 +350,7 @@ class WatchmanViewModel(
         Manifest.permission.CALL_PHONE
     )
     fun callAlias(
-        alias: String
+        alias: WatchmanAlias
     ) {
 
         if (
@@ -279,7 +364,7 @@ class WatchmanViewModel(
             val contacts =
                 dao.getForAlias(
                     societyId,
-                    alias
+                    alias.alias
                 )
 
             val valid =

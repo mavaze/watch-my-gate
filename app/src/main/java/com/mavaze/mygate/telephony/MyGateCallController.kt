@@ -313,7 +313,7 @@ object MyGateCallController {
         }
     }
 
-    @RequiresPermission(Manifest.permission.CALL_PHONE)
+//    @RequiresPermission(Manifest.permission.CALL_PHONE)
     fun placeCall(
         context: Context,
         phoneNumber: String
